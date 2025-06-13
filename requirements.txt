@@ -1,20 +1,20 @@
 # Web interface
-streamlit==1.41.1
-pandas==2.2.3
-plotly==5.21.0
+streamlit
+pandas
+plotly
 
 # Audio recording and handling
-sounddevice==0.5.2
-scipy==1.15.3
-numpy==2.2.1
+sounddevice
+scipy
+numpy
 
 # Speech-to-text (Whisper)
-openai-whisper==20240930
+openai-whisper
 
 # Asynchronous execution
-threading2==1.0.0  # Note: 'threading' is built-in, this is for named clarity only if you use threading features outside stdlib.
+threading 
 
 # Utility
-python-dotenv==1.1.0
-groq==0.24.0
-typing_extensions==4.12.2  # Needed for Python < 3.10
+python-dotenv
+groq
+typing_extensions  # Needed for Python < 3.10
