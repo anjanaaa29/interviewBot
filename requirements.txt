@@ -11,9 +11,6 @@ numpy
 # Speech-to-text (Whisper)
 openai-whisper
 
-# Asynchronous execution
-threading 
-
 # Utility
 python-dotenv
 groq
