@@ -41,17 +41,17 @@ def generate_domain_feedback(domain, hr_data, tech_data):
 
     Based on their responses below, suggest short and precise:
     1. The top 3 technical topics or concepts they should focus on next.
-    2. Any soft skill or HR-related improvements.
+    2. Any soft skills or HR-related improvements.
     3. Career advice or learning path to become job-ready in this domain.
 
     Answers:
     {combined_answers}
 
-    Give the feedback in bullet points and be specific to the domain.
+    Give feedback in bullet points and be specific to the domain.
     """
 
     response = client.chat.completions.create(
-        model="llama-3.3-70b-versatile",  # Use supported model or your current model
+        model="llama-3.3-70b-versatile",
         messages=[
             {"role": "system", "content": "You are a career guidance coach."},
             {"role": "user", "content": prompt}
@@ -82,24 +82,38 @@ def display_course_recommendations(domain):
     for name, url in course_links:
         st.markdown(f"- [{name}]({url})", unsafe_allow_html=True)
 
-
-def fetch_job_links_with_ai(domain, location="India"):
-    """Return only search links for job portals based on domain and location"""
-    search_queries = [
-        ("Google Jobs", f"https://www.google.com/search?q={urllib.parse.quote_plus(domain + ' jobs in ' + location)}"),
-        ("LinkedIn", f"https://www.linkedin.com/jobs/search/?keywords={urllib.parse.quote_plus(domain)}&location={urllib.parse.quote_plus(location)}"),
-        ("Indeed", f"https://in.indeed.com/jobs?q={urllib.parse.quote_plus(domain)}&l={urllib.parse.quote_plus(location)}"),
-        ("Glassdoor", f"https://www.glassdoor.co.in/Job/jobs.htm?sc.keyword={urllib.parse.quote_plus(domain)}&locT=C&locId=115&locKeyword={urllib.parse.quote_plus(location)}")
+def search_job_portals(domain, location):
+    query = urllib.parse.quote_plus(f"{domain} jobs in {location}")
+    return [
+        ("LinkedIn", f"https://www.linkedin.com/jobs/search/?keywords={query}&location={urllib.parse.quote_plus(location)}"),
+        ("Indeed", f"https://in.indeed.com/jobs?q={query}&l={urllib.parse.quote_plus(location)}"),
+        ("Glassdoor", f"https://www.glassdoor.co.in/Job/jobs.htm?sc.keyword={query}&locT=C&locId=115&locKeyword={urllib.parse.quote_plus(location)}"),
+        ("Naukri", f"https://www.naukri.com/{query}-jobs-in-{urllib.parse.quote_plus(location)}")
     ]
-    return search_queries
 
-def display_job_recommendations(domain):
-    """Display only job search links for the predicted domain"""
-    st.subheader("💼 Job Search Links")
-    st.caption(f"Based on your interest in `{domain}`")
+def fetch_jobs_with_agent(domain, location="India"):
+    """Agentic job search wrapper: combines reasoning + actionable links"""
+    st.subheader("💼 AI-Powered Job Recommendations")
+    st.caption(f"Based on your interest in `{domain}` and location `{location}`")
 
-    job_links = fetch_job_links_with_ai(domain)
+    planning_prompt = f"""
+    You're helping a fresher in the {domain} domain find jobs.
+    What 5 job titles or roles should they search for as a beginner?
+    Respond as a comma-separated list.
+    """
+    response = groq_client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": "You are a job planning assistant."},
+            {"role": "user", "content": planning_prompt}
+        ]
+    )
 
+    job_roles = response.choices[0].message.content.strip()
+    st.write(job_roles)
+
+    st.markdown("#### 🔗 Search Job Portals")
+    job_links = search_job_portals(domain, location)
     for name, url in job_links:
         st.markdown(f"- [{name}]({url})", unsafe_allow_html=True)
 
@@ -113,7 +127,6 @@ def show_dashboard(hr_data, tech_data, candidate_id, domain):
         st.warning("⚠️ No interview data found.")
         return
 
-    # Compute stats
     num_hr = len(hr_data)
     num_tech = len(tech_data)
     total_questions = num_hr + num_tech
@@ -121,42 +134,29 @@ def show_dashboard(hr_data, tech_data, candidate_id, domain):
     total_tech_score = sum(item.get("score", 0) for item in tech_data)
     avg_score = round((total_hr_score + total_tech_score) / total_questions, 2) if total_questions > 0 else 0
 
-    # Dashboard Header
     st.title("📊 Interview Performance Dashboard")
     st.markdown(f"**Candidate ID:** `{candidate_id}` | **Domain:** `{domain}`")
-    
-    # Performance Metrics
+
     st.subheader("📊 Your Performance Summary")
     cols = st.columns(3)
-    cols[0].metric("HR Score", f"{total_hr_score}/{num_hr*10}", 
-                  help="Your total HR score out of possible points")
-    cols[1].metric("Tech Score", f"{total_tech_score}/{num_tech*10}", 
-                  help="Your total Technical score out of possible points")
-    cols[2].metric("Overall Average", f"{avg_score}/10", 
-                  delta=f"{(avg_score-5):.1f} vs baseline" if avg_score else None)
-    
-    # Visualizations
+    cols[0].metric("HR Score", f"{total_hr_score}/{num_hr*10}", help="Your total HR score out of possible points")
+    cols[1].metric("Tech Score", f"{total_tech_score}/{num_tech*10}", help="Your total Technical score out of possible points")
+    cols[2].metric("Overall Average", f"{avg_score}/10", delta=f"{(avg_score-5):.1f} vs baseline" if avg_score else None)
+
     tab1, tab2 = st.tabs(["📈 Score Analysis", "📝 Detailed Feedback"])
-    
+
     with tab1:
         col1, col2 = st.columns(2)
         with col1:
-            fig_pie = px.pie(
-                names=["HR", "Technical"],
-                values=[num_hr, num_tech],
-                title="Question Distribution"
-            )
+            fig_pie = px.pie(names=["HR", "Technical"], values=[num_hr, num_tech], title="Question Distribution")
             st.plotly_chart(fig_pie, use_container_width=True)
         with col2:
-            fig_bar = px.bar(
-                x=["HR", "Technical"],
-                y=[total_hr_score/num_hr if num_hr else 0, 
-                   total_tech_score/num_tech if num_tech else 0],
-                title="Average Scores",
-                labels={'x':'Round', 'y':'Average Score'}
-            )
+            fig_bar = px.bar(x=["HR", "Technical"],
+                             y=[total_hr_score/num_hr if num_hr else 0, total_tech_score/num_tech if num_tech else 0],
+                             title="Average Scores",
+                             labels={'x': 'Round', 'y': 'Average Score'})
             st.plotly_chart(fig_bar, use_container_width=True)
-    
+
     with tab2:
         display_table(hr_data, "HR Round")
         display_table(tech_data, "Technical Round")
@@ -165,13 +165,9 @@ def show_dashboard(hr_data, tech_data, candidate_id, domain):
         with st.spinner("Generating feedback based on your answers..."):
             feedback = generate_domain_feedback(domain, hr_data, tech_data)
             st.markdown(feedback)
-    
-    # Recommendations Section
-    # st.header("🚀 Your Career Development Tools")
+
     display_course_recommendations(domain)
-    display_job_recommendations(domain)
+    fetch_jobs_with_agent(domain)
 
-    # Footer
     st.divider()
-    st.caption("ℹ️ Recommendations powered by RapidAPI - Updates in real-time")
-
+    st.caption("ℹ️ Recommendations powered by Groq AI")
