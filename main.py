@@ -80,54 +80,89 @@ def main():
     # Interview stages
     if st.session_state.stage == 'start':
         display_chat()
+
         jd = st.text_input("Paste Job Description here:", key="jd_input")
-        
-        if jd and jd != st.session_state.jd:
+
+        if jd and jd != st.session_state.get("jd"):
             st.session_state.jd = jd
             add_message(jd, True)
-            
+
             domain = identify_domain(jd, client)
+            domain_clean = domain.strip().lower()
             st.session_state.domain = domain
-            add_message(f"Predicted domain: {domain}. Is this correct? (yes/recheck)", False)
-            st.session_state.stage = 'confirm_domain'
-            st.rerun()
+
+            # Invalid input check
+            if any(keyword in domain_clean for keyword in ["invalid", "error occurred"]):
+                error_message = (
+                    "❌ The input doesn't appear to be a valid job description.\n\n"
+                    "Please paste a proper job description including responsibilities, skills, or role expectations."
+                )
+                add_message(error_message, False)
+                # Optionally reset input
+                st.session_state.pop("jd", None)
+            else:
+                add_message(f"Predicted domain: **{domain}**.\n\nIs this correct? (yes/recheck)", False)
+                st.session_state.stage = 'confirm_domain'
+                st.rerun()
 
     elif st.session_state.stage == 'confirm_domain':
         display_chat()
 
-        if st.session_state.get("clear_confirm_domain_input", False):
-            st.session_state.confirm_domain_input = ""
-            st.session_state.clear_confirm_domain_input = False
-
-        user_input = st.text_input("", key="confirm_domain_input")
-        
+        user_input = st.text_input("Your response:", key="user_confirmation").lower().strip()
+            
         if user_input:
             add_message(user_input, True)
             
-            if user_input.lower() == 'yes':
-                add_message("Shall we start the HR round? Type 'Yes' to proceed", False)
+            if user_input == 'yes':
+                if 'invalid_input' in st.session_state:
+                    del st.session_state.invalid_input
                 st.session_state.stage = 'start_hr_prompt'
-            elif user_input.lower() == 'recheck':
+                st.rerun()
+                
+            elif user_input == 'recheck':
+                if 'invalid_input' in st.session_state:
+                    del st.session_state.invalid_input
                 domain = identify_domain(st.session_state.jd, client)
                 st.session_state.domain = domain
-
-                add_message(f"🔄 Rechecked domain: **{domain}**. Is this correct? (yes/recheck)", False)
-                st.session_state.stage = 'confirm_domain'
-
-            st.session_state.clear_confirm_domain_input = True  # Clear input on next rerun
-            st.rerun()
+                add_message(f"🔄 Rechecked domain: {domain}. Is this correct? (yes/recheck)", False)
+                if 'user_confirmation' in st.session_state:
+                    del st.session_state.user_confirmation
+                st.rerun()
+                
+            else:
+                add_message("❌ Please enter either 'yes' to confirm or 'recheck' to identify again", False)
+                # Clear the input for next interaction
+                if 'user_confirmation' in st.session_state:
+                    del st.session_state.user_confirmation
+                st.rerun()
 
     elif st.session_state.stage == 'start_hr_prompt':
         display_chat()
-        user_input = st.text_input("", key="start_hr_input")
+
+        if not st.session_state.get('hr_prompt_asked', False):
+            add_message("Are you ready to begin the HR round? (Type 'yes' to start)", False)
+            st.session_state.hr_prompt_asked = True
+            st.rerun()
+
+        user_input = st.text_input("Your response:", key="hr_start_input").lower().strip()
+        
         if user_input:
             add_message(user_input, True)
-            if user_input.lower() == 'yes':
+        
+            if user_input == 'yes':
                 st.session_state.hr_qns = generate_hr_questions()
                 question = st.session_state.hr_qns[0]
-                add_message(f"HR Q1: {question}", False)
+                add_message(f"HR Question 1: {question}", False)
                 st.session_state.stage = 'hr_round'
-            st.rerun()
+                st.session_state.hr_index = 0 
+                st.session_state.hr_prompt_asked = False
+                st.rerun()
+            else:
+                add_message("❌ Please type 'yes' to begin the HR round", False)
+                # Clear the input for next interaction
+                if 'hr_start_input' in st.session_state:
+                    del st.session_state.hr_start_input
+                st.rerun()
 
     elif st.session_state.stage == 'hr_round':
         display_chat()
@@ -184,8 +219,8 @@ def main():
 
     elif st.session_state.stage == 'tech_prompt':
         display_chat()
-        user_input = st.text_input("", key="start_tech_input")
-        
+        user_input = st.text_input("Your response:", key="tech_prompt_input").lower().strip()
+                
         if user_input:
             add_message(user_input, True)
             if user_input.lower() == 'yes':
@@ -193,13 +228,19 @@ def main():
                 question = st.session_state.tech_qns[0]
                 add_message(f"Tech Q1: {question}", False)
                 st.session_state.stage = 'tech_round'
-            st.rerun()
+                st.session_state.tech_index=0
+                st.rerun()
+            else:
+                add_message("Please type 'yes' to proceed to the technical round",False)
+                if 'tech_prompt_input' in st.session_state:
+                    del st.session_state.tech_prompt_input
+                st.rerun()
 
     elif st.session_state.stage == 'tech_round':
         display_chat()
         if st.session_state.tech_index < len(st.session_state.tech_qns):
             question = st.session_state.tech_qns[st.session_state.tech_index]
-            st.write(f"**Tech Q{st.session_state.tech_index + 1}:** {question}")
+            # st.write(f"**Tech Q{st.session_state.tech_index + 1}:** {question}")
 
             col1, col2 = st.columns(2)
             
@@ -262,80 +303,90 @@ def main():
             if user_input:
                 if user_input.strip() == st.session_state.candidate_id:
                     st.session_state.id_verified = True
-                    add_message("Candidate ID verified. Type 'show result' to view your interview dashboard", False)
+                    add_message("✅ Candidate ID verified. Type 'show result' to view your interview dashboard", False)
                     st.rerun()
                 else:
-                    st.error("Incorrect candidate ID. Please try again.")
+                    st.error("❌ Incorrect candidate ID. Please try again.")
                     st.rerun()
         
         # Second phase: After ID verification, show results prompt
-        elif st.session_state.get("id_verified", False) and not st.session_state.get("result_shown", False):
+        else:
             user_input = st.text_input("", key="result_input", placeholder="Type 'show result'")
-            
-            if user_input and user_input.lower().strip() == 'show result':
-                # Prepare the data for dashboard
-                hr_results = [
-                    {
-                        "candidate_id": st.session_state.candidate_id,
-                        "domain": st.session_state.domain,
-                        "question": st.session_state.hr_qns[i],
-                        "answer": ans[0],
-                        "score": ans[1],
-                        "feedback": ans[2]
-                    }
-                    for i, ans in enumerate(st.session_state.hr_answers)
-                ]
+        
+            if user_input:
+                add_message(user_input, True)
                 
-                tech_results = [
-                    {
-                        "candidate_id": st.session_state.candidate_id,
-                        "domain": st.session_state.domain,
-                        "question": st.session_state.tech_qns[i],
-                        "answer": ans[0],
-                        "score": ans[1],
-                        "feedback": ans[2]
-                    }
-                    for i, ans in enumerate(st.session_state.tech_answers)
-                ]
-                
-                # Save to session state and storage
-                st.session_state.hr_data = hr_results
-                st.session_state.tech_data = tech_results
-                save_hr_result(st.session_state.candidate_id, hr_results)
-                save_tech_result(st.session_state.candidate_id, tech_results)
-            
-                # Mark results as shown
-                st.session_state.result_shown = True
-                st.rerun()
+                if user_input.lower().strip() == 'show result':
+                    # Prepare the data for dashboard
+                    hr_results = [
+                        {
+                            "candidate_id": st.session_state.candidate_id,
+                            "domain": st.session_state.domain,
+                            "question": st.session_state.hr_qns[i],
+                            "answer": ans[0],
+                            "score": ans[1],
+                            "feedback": ans[2]
+                        }
+                        for i, ans in enumerate(st.session_state.hr_answers)
+                    ]
+                    
+                    tech_results = [
+                        {
+                            "candidate_id": st.session_state.candidate_id,
+                            "domain": st.session_state.domain,
+                            "question": st.session_state.tech_qns[i],
+                            "answer": ans[0],
+                            "score": ans[1],
+                            "feedback": ans[2]
+                        }
+                        for i, ans in enumerate(st.session_state.tech_answers)
+                    ]
+                    
+                    # Save to session state and storage
+                    st.session_state.hr_data = hr_results
+                    st.session_state.tech_data = tech_results
+                    save_hr_result(st.session_state.candidate_id, hr_results)
+                    save_tech_result(st.session_state.candidate_id, tech_results)
+                    
+                    # Mark results as shown and proceed to dashboard
+                    st.session_state.result_shown = True
+                    st.session_state.stage = 'show_dashboard'  # or whatever your dashboard stage is
+                    st.rerun()
+                else:
+                    add_message("❌ Please type 'show result' to view your interview dashboard", False)
+                    # Clear the input for next interaction
+                    if 'result_input' in st.session_state:
+                        del st.session_state.result_input
+                    st.rerun()
         
         # Third phase: Show dashboard
-        if st.session_state.get("result_shown", False):
-            st.markdown("### 📊 INTERVIEW DASHBOARD")
+    elif st.session_state.stage=='show_dashboard':
+        st.markdown("### 📊 INTERVIEW DASHBOARD")
             
             # Call the show_dashboard function with the prepared data
-            show_dashboard(
-                hr_data=st.session_state.hr_data,
-                tech_data=st.session_state.tech_data,
-                candidate_id=st.session_state.candidate_id,
-                domain=st.session_state.domain
-            )
+        show_dashboard(
+            hr_data=st.session_state.hr_data,
+            tech_data=st.session_state.tech_data,
+            candidate_id=st.session_state.candidate_id,
+            domain=st.session_state.domain
+        )
 
-            if st.session_state.page == "chatbot":
-                chatbot_page()
-            else:
-                # Interview result and button layout
-                col1, col2 = st.columns(2)
-                with col1:
-                    if st.button("🔁 Start New Interview"):
-                        for key in list(st.session_state.keys()):
-                            del st.session_state[key]
-                        st.session_state.stage = 'start'
-                        st.rerun()
+        if st.session_state.page == "chatbot":
+            chatbot_page()
+        else:
+            # Interview result and button layout
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🔁 Start New Interview"):
+                    for key in list(st.session_state.keys()):
+                        del st.session_state[key]
+                    st.session_state.stage = 'start'
+                    st.rerun()
 
-                with col2:
-                    if st.button("💬 Start Chatbot Discussion"):
-                        st.session_state.page = "chatbot"
-                        st.rerun()
+            with col2:
+                if st.button("💬 Start Chatbot Discussion"):
+                    st.session_state.page = "chatbot"
+                    st.rerun()
             
 
 if __name__ == "__main__":
