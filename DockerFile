@@ -1,10 +1,17 @@
-# Use a base Python image
-FROM python:3.10
+# Base image with Python
+FROM python:3.10-slim
 
 # Install system dependencies
-RUN apt-get update && \
-    apt-get install -y portaudio19-dev ffmpeg && \
-    apt-get clean
+RUN apt-get update && apt-get install -y \
+    portaudio19-dev \
+    ffmpeg \
+    libasound2 \
+    libasound2-dev \
+    libportaudio2 \
+    libportaudiocpp0 \
+    libav-tools \
+    build-essential \
+    && apt-get clean
 
 # Set working directory
 WORKDIR /app
@@ -13,8 +20,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --upgrade pip && pip install -r requirements.txt
 
-# Copy app files into the container
+# Copy app files
 COPY . .
 
-# Set command to run the app on port 8080 (required for Cloud Run)
-CMD ["streamlit", "run", "main.py", "--server.port=8080", "--server.address=0.0.0.0"]
+# Default command to run your app
+CMD ["python", "main.py"]
